@@ -56,6 +56,7 @@ impl fmt::Display for SwissRow {
 
 static WIDTH : u32 = 128;
 static HEIGHT : u32 = 128;
+static SHRINK : f32 = 0.9;
 
 pub struct Point {
     x : f32,
@@ -81,7 +82,7 @@ fn scale_shift_model( model : &Vec<Point> ) -> Vec<Point> {
     let com = ((maxx + minx) / 2.0, (maxy + miny) / 2.0);
     let diag =((maxx - minx) * (maxx - minx) + (maxy - miny) * (maxy - miny)).sqrt();
     // Make scalar a little smaller after selecting the smallest
-    let scalar = (WIDTH as f32 / diag).min(HEIGHT as f32 / diag) * 0.7;
+    let scalar = (WIDTH as f32 / diag).min(HEIGHT as f32 / diag) * SHRINK;
         
      for point in model {
         let np = Point {
@@ -167,7 +168,7 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
                                     let yf = ys + (HEIGHT as f32 / 2.0);
                                     if xf >= 0.0 && xf < WIDTH as f32 && yf >= 0.0 && yf < HEIGHT as f32 {   
                                         let pval = (1.0 / (2.0 * pi * sigma.powf(2.0))) *
-                                            (-((ex as f32 - xf).powf(2.0) + (ey as f32 - ys).powf(2.0)) / (2.0*sigma.powf(2.0))).exp();        
+                                            (-((ex as f32 - xf).powf(2.0) + (ey as f32 - yf).powf(2.0)) / (2.0*sigma.powf(2.0))).exp();        
                                         timg[ex as usize][ey as usize] += pval;
                                     }
                                     else {
