@@ -14,6 +14,7 @@ extern crate scoped_threadpool;
 extern crate fitrs;
 extern crate rand_distr;
 extern crate hdf5;
+extern crate ndarray;
 
 use std::env;
 use std::fmt;
@@ -25,6 +26,8 @@ use rand::distributions::Uniform;
 use scoped_threadpool::Pool;
 use std::sync::mpsc::channel;
 use pbr::ProgressBar;
+use ndarray::{Slice, SliceInfo, s, Array1};
+
 
 // This represents a row in the matlab file
 // 0 and 1 are x and y but I can't remember what the others
@@ -203,15 +206,62 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
     });
 }
 
-fn parse_matlab(path : &String) -> Vec<Vec<Point>> {
+fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
     let mut models : Vec<Vec<Point>>  = vec!();
+    let mut use_all = false;
 
     match hdf5::File::open(path) {
         Ok(file) => {
             for t in file.member_names() {
                 for s in t {
                     println!("{}", s);
+                    if s == "DBSCAN_filtered" {
+                        use_all = true;
+                    }
                 }
+            }
+            // We have a different setup if we are using Christians all_Particles file
+            if use_all {
+                match file.dataset("DBSCAN_filtered") {
+                    Ok(refs) => {
+                        /*match refs.read_2d::<f32>() {
+                            Ok(final_data) => {
+                                let xpos = final_data.row(0);
+                                let ypos = final_data.row(1);
+
+                                println!("{}, {}", xpos, ypos);
+                            
+                            },
+                            Err(e) => {
+                                println!("Error in final data read. {}", e);
+                            }
+                        }*/
+                        //let slice = s![1..-1, 1..-1];
+                        //let slinfo = SliceInfo::<_, ndarray::Ix2>::new(slice).unwrap().as_ref();
+                        //let slice = ndarray::SliceInfo::<usize, ndarray::Ix2>::new(0);
+                        // No idea why an _ works for the second type :S
+                        /*match refs.read_slice_1d::<f32, _>(s![2,..]) {
+                            Ok(fdata) => {
+                                println!("{:?}", fdata);
+                            },
+                            Err(e) => {
+                                println!("Error reading slice {}", e);
+                            }
+                        }*/
+                        println!("{:?}", refs.shape());
+                        println!("{:?}", refs.chunks());
+                        let v: Array1<f32> = refs.read_slice_1d(s![3,1..5])?;
+
+                        
+                        println!("Successful read.");
+                        
+                    },
+                    Err(e) => {
+                        return Err(e);
+                    }
+
+                }
+                return Ok(models);   
             }
 
             match file.group("#refs#") {
@@ -243,25 +293,31 @@ fn parse_matlab(path : &String) -> Vec<Vec<Point>> {
                                         },
                                         Err(e) => {
                                             println!("Error in final data read. {}", e);
+                                            return Err(e);
                                         }
                                     }
                                     models.push(model);
                                 }, 
                                 Err(e) => {
                                     println!("{}", e);
+                                    return Err(e);
                                 }
                             }
                         }
                     }
                 },
-                Err(e) => { println!("{}", e); }
+                Err(e) => {
+                    println!("{}", e); 
+                    return Err(e);
+                }
             }
 
         }, Err(e) => {
             println!("Error opening file: {} {}", path, e);
+            return Err(e);
         }
     }
-    models
+    Ok(models)
 } 
 
 fn main() {
@@ -276,6 +332,12 @@ fn main() {
     let npertubations = args[5].parse::<u32>().unwrap();
     let sigma = args[4].parse::<f32>().unwrap();
 
-    let models = parse_matlab(&args[1]);
-    render(&models, &args[2], nthreads, npertubations, sigma);
+    match parse_matlab(&args[1]) {
+        Ok(models) => {
+            render(&models, &args[2], nthreads, npertubations, sigma);
+        }, 
+        Err(e) => {
+            println!("Error parsing MATLAB File: {}", e);
+        }
+    }
 }
