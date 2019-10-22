@@ -208,7 +208,7 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
 
 fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
     let mut models : Vec<Vec<Point>>  = vec!();
-    let mut use_all = false;
+    let mut file_option = 0;
 
     match hdf5::File::open(path) {
         Ok(file) => {
@@ -216,12 +216,15 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
                 for s in t {
                     println!("{}", s);
                     if s == "DBSCAN_filtered" {
-                        use_all = true;
+                        file_option = 1;
+                    }
+                    if s == "Cep152_all_filtered" {
+                        file_option = 2;
                     }
                 }
             }
             // We have a different setup if we are using Christians all_Particles file
-            if use_all {
+            if file_option == 1 {
                 match file.dataset("DBSCAN_filtered") {
                     Ok(refs) => {
                         /*match refs.read_2d::<f32>() {
@@ -261,54 +264,108 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
                     }
 
                 }
-                return Ok(models);   
+ 
             }
+            else if file_option == 2 {
+                // Cep152_all_filtered file
+                 match file.group("#refs#") {
+                    Ok(refs) => {
+                        for names in refs.member_names() {
+                            for name in names {
+                                let mut owned_string: String = "/#refs#/".to_owned();
+                                let borrowed_string: &str = &name;
+                                owned_string.push_str(borrowed_string);
 
-            match file.group("#refs#") {
-                Ok(refs) => {
-                    for names in refs.member_names() {
-                        for name in names {
-                            let mut owned_string: String = "/#refs#/".to_owned();
-                            let borrowed_string: &str = &name;
-                            owned_string.push_str(borrowed_string);
+                                match file.dataset(&owned_string) {
+                                    Ok(tset) => {
+                                        //println!("{}", owned_string);
+                                    
+                                        match tset.read_2d::<f32>() {
+                                            Ok(final_data) => {
+                                                if final_data.shape()[0] == 8 {
+                                                    let mut model : Vec<Point> = vec![];
+                                                    let xpos = final_data.row(0);
+                                                    let ypos = final_data.row(1);
+                                                    //println!("{} {}", xpos, ypos);
 
-                            match file.dataset(&owned_string){
-                                Ok(tset) => {
-                                    //println!("DataSet Shape: {:?}", tset.shape());
-                                    let mut model : Vec<Point> = vec![];
+                                                    for i in 0..tset.shape()[1] {
+                                                        let p = Point {
+                                                            x : xpos[i],
+                                                            y : ypos[i]
+                                                        };
+                                                    
+                                                        model.push(p);
+                                                    }
 
-                                    match tset.read_2d::<f32>() {
-                                        Ok(final_data) => {
-                                            let xpos = final_data.row(0);
-                                            let ypos = final_data.row(1);
-
-                                            for i in 0..tset.shape()[1] {
-                                                let p = Point {
-                                                    x : xpos[i],
-                                                    y : ypos[i]
-                                                };
-                                                
-                                                model.push(p);
+                                                    models.push(model);   
+                                                }
+                                                //println!("{:?}", final_data.shape());
+                                            },
+                                            Err(e) => {
+                                                println!("{}", e);
                                             }
-                                        },
-                                        Err(e) => {
-                                            println!("Error in final data read. {}", e);
-                                            return Err(e);
                                         }
+                                    },
+                                    Err (e) => {
+                                        println!("{}", e);
                                     }
-                                    models.push(model);
-                                }, 
-                                Err(e) => {
-                                    println!("{}", e);
-                                    return Err(e);
                                 }
                             }
                         }
+
+                    },
+                    Err(e) => {
+
                     }
-                },
-                Err(e) => {
-                    println!("{}", e); 
-                    return Err(e);
+                }
+                
+            } else {
+                match file.group("#refs#") {
+                    Ok(refs) => {
+                        for names in refs.member_names() {
+                            for name in names {
+                                let mut owned_string: String = "/#refs#/".to_owned();
+                                let borrowed_string: &str = &name;
+                                owned_string.push_str(borrowed_string);
+
+                                match file.dataset(&owned_string){
+                                    Ok(tset) => {
+                                        //println!("DataSet Shape: {:?}", tset.shape());
+                                        let mut model : Vec<Point> = vec![];
+
+                                        match tset.read_2d::<f32>() {
+                                            Ok(final_data) => {
+                                                let xpos = final_data.row(0);
+                                                let ypos = final_data.row(1);
+
+                                                for i in 0..tset.shape()[1] {
+                                                    let p = Point {
+                                                        x : xpos[i],
+                                                        y : ypos[i]
+                                                    };
+                                                    
+                                                    model.push(p);
+                                                }
+                                            },
+                                            Err(e) => {
+                                                println!("Error in final data read. {}", e);
+                                                return Err(e);
+                                            }
+                                        }
+                                        models.push(model);
+                                    }, 
+                                    Err(e) => {
+                                        println!("{}", e);
+                                        return Err(e);
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("{}", e); 
+                        return Err(e);
+                    }
                 }
             }
 
@@ -316,6 +373,7 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
             println!("Error opening file: {} {}", path, e);
             return Err(e);
         }
+           
     }
     Ok(models)
 } 
