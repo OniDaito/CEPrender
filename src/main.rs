@@ -181,7 +181,7 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
                         }
                         
                         let fidx = format!("/image_{:06}.fits",
-                            (start + _i * (pertubations as usize))  + _j as usize);
+                            ((start + _i) * (pertubations as usize))  + _j as usize);
                         let mut fitspath = out_path.clone();
                         fitspath.push_str(&fidx);
                         save_fits(&timg, &fitspath);
