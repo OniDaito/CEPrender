@@ -164,7 +164,7 @@ fn scale_shift_model( model : &Vec<Point>, scale : f32 ) -> Vec<Point> {
     /*let diag =((maxx - minx) * (maxx - minx) + (maxy - miny) * (maxy - miny)).sqrt();
     // Make scalar a little smaller after selecting the smallest
     let scalar = (WIDTH as f32 / diag).min(HEIGHT as f32 / diag) * SHRINK;*/
-    let scalar = scale * SHRINK;
+    let scalar = scale * (WIDTH as f32) * SHRINK;
         
      for point in model {
         let np = Point {
