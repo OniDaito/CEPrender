@@ -253,11 +253,12 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
                                             (-((ex as f32 - xf).powf(2.0) + (ey as f32 - yf).powf(2.0)) / (2.0*sigma.powf(2.0))).exp();        
                                         timg[ex as usize][ey as usize] += pval;
                                     }
-                                    else {
+                                    // We may get ones that exceed but it's very likely they are outliers
+                                    /*else {
                                         // TODO - ideally we send an error that propagates
                                         // and kills all other threads and quits cleanly
                                         println!("Point still exceeding range in image");
-                                    }
+                                    }*/
                                 }
                             }
                         }
