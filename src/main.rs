@@ -66,9 +66,78 @@ pub struct Point {
     y : f32
 }
 
+// go through all the models and find the extents. This gives
+// us a global scale, we can use in the rendering.
+fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
+    let mut w : f32 = 0.0;
+    let mut h : f32  = 0.0;
+
+    let mut minx : f32 = 1e10;
+    let mut miny : f32 = 1e10;
+    let mut maxx : f32 = -1e10;
+    let mut maxy : f32 = -1e10;
+
+    for model in models {
+        for point in model {
+            if point.x < minx { minx = point.x; }
+            if point.y < miny { miny = point.y; }
+            if point.x > maxx { maxx = point.x; }
+            if point.y > maxy { maxy = point.y; }
+        }
+        let tw = (maxx - minx).abs();
+        let th = (maxy - miny).abs();
+        if tw > w { w = tw; }
+        if th > h { h = th; }
+    }
+
+    (w, h)
+}
+
+// Filter models, by cutoff size thus far
+fn filter_models(models : &mut Vec<Vec<Point>>, cutoff: u32 )  {
+    for idx in 0..models.len() {
+        if models[idx].len() < cutoff as usize {
+            models.remove(idx);
+        }   
+    }
+}
+
+// Get some stats on the models, starting with the mean and
+// median number of points
+
+fn find_stats ( models : &Vec<Vec<Point>> ) -> (f32, u32, f32, u32, u32) {
+    let mut mean : f32 = 0.0;
+    let mut median : u32 = 0;
+    let mut min : u32 = 100000000;
+    let mut max : u32 = 0;
+    let mut sd : f32 = 0.0;
+    let mut vv : Vec<u32> = vec![];
+
+    for model in models {
+        vv.push(model.len() as u32);
+        mean = mean + model.len() as f32;
+    }
+    
+    vv.sort();
+    median = vv[ (vv.len() / 2) as usize] as u32;
+    mean = mean / vv.len() as f32;
+    let vlen = vv.len();
+
+    for ll in vv {
+        sd = (ll as f32 - mean) * (ll as f32 - mean);
+    }
+    sd = (sd / vlen as f32).sqrt();
+    
+    (mean, median, sd, min, max)
+}
+
+
 // Scale and move all the points so they are in WIDTH, HEIGHT
 // and the Centre of mass moves to the origin.
-fn scale_shift_model( model : &Vec<Point> ) -> Vec<Point> {
+// We pass in the global scale as we don't want to scale per image.
+// We are moving the centre of mass to the centre of the image though
+// so we have to put in translation to our final model
+fn scale_shift_model( model : &Vec<Point>, scale : f32 ) -> Vec<Point> {
     let mut scaled : Vec<Point> = vec![];
     let mut minx : f32 = 1e10;
     let mut miny : f32 = 1e10;
@@ -83,9 +152,10 @@ fn scale_shift_model( model : &Vec<Point> ) -> Vec<Point> {
     }
 
     let com = ((maxx + minx) / 2.0, (maxy + miny) / 2.0);
-    let diag =((maxx - minx) * (maxx - minx) + (maxy - miny) * (maxy - miny)).sqrt();
+    /*let diag =((maxx - minx) * (maxx - minx) + (maxy - miny) * (maxy - miny)).sqrt();
     // Make scalar a little smaller after selecting the smallest
-    let scalar = (WIDTH as f32 / diag).min(HEIGHT as f32 / diag) * SHRINK;
+    let scalar = (WIDTH as f32 / diag).min(HEIGHT as f32 / diag) * SHRINK;*/
+    let scalar = scale * SHRINK;
         
      for point in model {
         let np = Point {
@@ -121,7 +191,7 @@ pub fn save_fits(img : &Vec<Vec<f32>>, filename : &String) {
 
 
 fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32, 
-    pertubations : u32, sigma : f32) {
+    pertubations : u32, sigma : f32, scale : f32) {
     // Split into threads here I think
     let pi = std::f32::consts::PI;
     let (tx, rx) = channel();
@@ -147,7 +217,7 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
                 let side = Uniform::new(-pi, pi);
 
                 for _i in 0..cslice.len() {
-                    let scaled = scale_shift_model(&cslice[_i]);
+                    let scaled = scale_shift_model(&cslice[_i], scale);
                 
                     for _j in 0..pertubations {
                         let mut timg : Vec<Vec<f32>> = vec![];
@@ -391,8 +461,16 @@ fn main() {
     let sigma = args[4].parse::<f32>().unwrap();
 
     match parse_matlab(&args[1]) {
-        Ok(models) => {
-            render(&models, &args[2], nthreads, npertubations, sigma);
+        Ok(mut models) => {
+            let (w, h) = find_extents(&models);
+            let (mean, median, sd, min, max) = find_stats(&models);
+            let cutoff = median - ((2.0 * sd) as u32);
+            filter_models(&mut models, cutoff);
+            println!("Model sizes (min, max, mean, median, sd) : {}, {}, {}, {}, {}", 
+                min, max, mean, median, sd);
+            let mut scale = 2.0 / w;
+            if h > w { scale = 2.0 / h; } 
+            render(&models, &args[2], nthreads, npertubations, sigma, scale);
         }, 
         Err(e) => {
             println!("Error parsing MATLAB File: {}", e);
