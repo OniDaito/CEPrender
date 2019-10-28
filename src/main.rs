@@ -72,12 +72,12 @@ fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
     let mut w : f32 = 0.0;
     let mut h : f32  = 0.0;
 
-    let mut minx : f32 = 1e10;
-    let mut miny : f32 = 1e10;
-    let mut maxx : f32 = -1e10;
-    let mut maxy : f32 = -1e10;
-
     for model in models {
+        let mut minx : f32 = 1e10;
+        let mut miny : f32 = 1e10;
+        let mut maxx : f32 = -1e10;
+        let mut maxy : f32 = -1e10;
+        
         for point in model {
             if point.x < minx { minx = point.x; }
             if point.y < miny { miny = point.y; }
