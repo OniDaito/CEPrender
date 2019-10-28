@@ -59,7 +59,7 @@ impl fmt::Display for SwissRow {
 
 static WIDTH : u32 = 128;
 static HEIGHT : u32 = 128;
-static SHRINK : f32 = 0.9;
+static SHRINK : f32 = 0.95;
 
 pub struct Point {
     x : f32,
