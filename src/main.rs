@@ -478,7 +478,8 @@ fn main() {
             println!("Model sizes (min, max, mean, median, sd) : {}, {}, {}, {}, {}", 
                 min, max, mean, median, sd);
             let mut scale = 2.0 / w;
-            if h > w { scale = 2.0 / h; } 
+            if h > w { scale = 2.0 / h; }
+            println!("Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
             render(&models, &args[2], nthreads, npertubations, sigma, scale);
         }, 
         Err(e) => {
