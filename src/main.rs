@@ -95,10 +95,16 @@ fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
 
 // Filter models, by cutoff size thus far
 fn filter_models(models : &mut Vec<Vec<Point>>, cutoff: u32 )  {
+    let mut rids : Vec<usize> = vec![];
+
     for idx in 0..models.len() {
         if models[idx].len() < cutoff as usize {
-            models.remove(idx);
+            rids.push(idx);
         }   
+    }
+    
+    for rdx in rids {
+        models.remove(rdx);
     }
 }
 
