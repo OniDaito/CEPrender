@@ -116,7 +116,14 @@ fn find_stats ( models : &Vec<Vec<Point>> ) -> (f32, u32, f32, u32, u32) {
     let mut vv : Vec<u32> = vec![];
 
     for model in models {
-        vv.push(model.len() as u32);
+        let ll = model.len();
+        vv.push(ll as u32);
+        if (ll as u32) < min {
+            min = ll as u32;
+        } 
+        if (ll as u32) > max {
+            max = ll as u32;
+        }
         mean = mean + model.len() as f32;
     }
     
