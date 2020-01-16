@@ -26,6 +26,7 @@ use gio::prelude::*;
 use gdk_pixbuf::Pixbuf;
 use gdk_pixbuf::Colorspace;
 use glib::Bytes;
+use glib::clone;
 
 use std::env;
 use std::fmt;
@@ -153,7 +154,6 @@ fn render (model : &Vec<Point>,  nthreads : u32,
     sigma : f32, scale : f32) -> Bytes { 
     // Split into threads here I think
     let pi = std::f32::consts::PI;
-    let (tx, rx) = channel();
     let mut progress : i32 = 0;
     let mut pool = Pool::new(nthreads);
 
@@ -174,6 +174,8 @@ fn render (model : &Vec<Point>,  nthreads : u32,
         for _y in 0..HEIGHT { tt.push(0.0); }
         timg.push(tt);
     }
+
+    println!("Model size: {}", scaled.len());
     
     for ex in 0..WIDTH {
         for ey in 0..HEIGHT {
@@ -201,19 +203,22 @@ fn render (model : &Vec<Point>,  nthreads : u32,
     // Find min/max
     let mut min_v : f32 = 100000.0;
     let mut max_v : f32 = -100000.0;
-    for ex in 0..WIDTH {
-        for ey in 0..HEIGHT {
+    for ex in 0..WIDTH as usize {
+        for ey in 0..HEIGHT as usize {
             if timg[ex][ey] < min_v { min_v = timg[ex][ey]; }
             if timg[ex][ey] > max_v { max_v = timg[ex][ey]; }
         }
     }
-
+    
     // convert our float vec vec to an array of u8
     let mut bimg : Vec<u8> = vec![];
-    for ex in 0..WIDTH {
-        for ey in 0..HEIGHT {
-            bimg.push((timg[ex][ey] / max_v * 255) as u8)
-        }
+    for ex in 0..WIDTH as usize {
+        for ey in 0..HEIGHT as usize {
+            // GTK insists we have RGB so we triple everything :/
+            for _ in 0..3 {
+                bimg.push((timg[ex][ey] / max_v * 255.0) as u8);
+            }
+        }   
     }
 
     let b = Bytes::from(&bimg);
@@ -221,7 +226,7 @@ fn render (model : &Vec<Point>,  nthreads : u32,
 }
 
 fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
-    let mut models : Vec<Vec<Point>>  = vec!();
+    let mut models: Vec<Vec<Point>> = vec!();
     let mut file_option = 0;
 
     match hdf5::File::open(path) {
@@ -276,11 +281,8 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
                     Err(e) => {
                         return Err(e);
                     }
-
                 }
- 
-            }
-            else if file_option == 2 {
+            } else if file_option == 2 {
                 // Cep152_all_filtered file
                  match file.group("#refs#") {
                     Ok(refs) => {
@@ -392,24 +394,64 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
     Ok(models)
 } 
 
-fn gtk_run(first_image : &Bytes) {
+fn get_image(model : &Vec<Point>, scale : f32 ) -> gtk::Image {
+    let first_image : Bytes = render(&model, 1, 1.25, scale);
+
+    let pixybuf = Pixbuf::new_from_bytes(&first_image,
+        Colorspace::Rgb,
+        false, 
+        8,
+        WIDTH as i32,
+        HEIGHT as i32,
+        (WIDTH * 3 * 1) as i32
+    );
+
+    let image : gtk::Image = gtk::Image::new_from_pixbuf(Some(&pixybuf));
+    image
+}
+
+fn gtk_run(models : Vec<Vec<Point>>, scale : f32) {
     let application = Application::new(
-        Some("com.github.gtk-rs.examples.basic"),
+        Some("Swiss Chooser"),
         Default::default(),
     ).expect("failed to initialize GTK application");
 
-    application.connect_activate(|app| {
+    application.connect_activate(move |app| {
+        let mut model_index : usize = 0;
         let window = ApplicationWindow::new(app);
         window.set_title("First GTK+ Program");
         window.set_default_size(350, 70);
+        
+        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 3);
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+        let image = get_image(&models[0], scale);
 
-        let image = Pixbuf::new_from_bytes(first_image);
+        vbox.add(&image);
+        vbox.add(&hbox);
+        window.add(&vbox);
 
-        let button = Button::new_with_label("Click me!");
-        button.connect_clicked(|_| {
-            println!("Clicked!");
+        let button_accept = Button::new_with_label("Accept");
+    
+        button_accept.connect_clicked(clone!(@strong vbox, @weak models, @strong model_index => move |_| { 
+            let children : Vec<gtk::Widget> = vbox.get_children();
+            vbox.remove(&children[0]);
+            model_index = model_index + 1;
+            let image = get_image(&models[model_index], scale);
+            vbox.add(&image)
+        }));
+
+        let button_decline = Button::new_with_label("Decline");
+        button_decline.connect_clicked(|_| {
         });
-        window.add(&button);
+
+        let button_quit = Button::new_with_label("Quit");
+        button_quit.connect_clicked(|_| {
+            return
+        });
+
+        hbox.add(&button_accept);
+        hbox.add(&button_decline);
+        hbox.add(&button_quit);
 
         window.show_all();
     });
@@ -426,7 +468,7 @@ fn main() {
     }
 
     match parse_matlab(&args[1]) {
-        Ok(mut models) => {
+        Ok(models) => {
             let (w, h) = find_extents(&models);
             let (mean, median, sd, min, max) = find_stats(&models);
             let cutoff = median - ((2.0 * sd) as u32);
@@ -436,11 +478,11 @@ fn main() {
             let mut scale = 3.0 / w;
             if h > w { scale = 3.0 / h; }
             println!("Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
-            Bytes b = render(models[0], 1, 1.25, 1.0);
-            gtk_run(&b);
+            gtk_run(models, scale);
         }, 
         Err(e) => {
             println!("Error parsing MATLAB File: {}", e);
         }
     }
+    
 }
