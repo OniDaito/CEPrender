@@ -31,6 +31,8 @@ use glib::clone;
 use std::env;
 use std::fmt;
 use rand::prelude::*;
+use std::sync::{Arc, Mutex};
+use std::{cell::Cell, rc::Rc};
 
 use std::process;
 use rand::distributions::Uniform;
@@ -49,6 +51,13 @@ pub struct Point {
     x : f32,
     y : f32
 }
+
+pub struct Chooser {
+    app: gtk::Application,
+    models : Vec<Vec<Point>>,
+    model_index : Cell<usize> // use this so we can mutate it later
+}
+
 
 // go through all the models and find the extents. This gives
 // us a global scale, we can use in the rendering.
@@ -225,8 +234,7 @@ fn render (model : &Vec<Point>,  nthreads : u32,
     b
 }
 
-fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
-    let mut models: Vec<Vec<Point>> = vec!();
+fn parse_matlab(path : &String, models : &mut Vec<Vec<Point>>) -> Result<bool, hdf5::Error> {
     let mut file_option = 0;
 
     match hdf5::File::open(path) {
@@ -391,7 +399,7 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
         }
            
     }
-    Ok(models)
+    Ok(true)
 } 
 
 fn get_image(model : &Vec<Point>, scale : f32 ) -> gtk::Image {
@@ -410,79 +418,121 @@ fn get_image(model : &Vec<Point>, scale : f32 ) -> gtk::Image {
     image
 }
 
-fn gtk_run(models : Vec<Vec<Point>>, scale : f32) {
-    let application = Application::new(
-        Some("Swiss Chooser"),
-        Default::default(),
-    ).expect("failed to initialize GTK application");
+impl Chooser {
+    pub fn new(path : &String) -> Rc<Self> {
+        let app = Application::new(
+            Some("com.github.gtk-rs.examples.basic"),
+            Default::default(),
+        ).expect("failed to initialize GTK application");
 
-    application.connect_activate(move |app| {
-        let mut model_index : usize = 0;
-        let window = ApplicationWindow::new(app);
-        window.set_title("First GTK+ Program");
-        window.set_default_size(350, 70);
+        let mut models : Vec<Vec<Point>> = vec!();
+        let mut model_index : Cell<usize> = Cell::new(0);
+
+        match parse_matlab(&path, &mut models) {
+            Ok(_) => {
+            }, 
+            Err(e) => {
+                println!("Error parsing MATLAB File: {}", e);
+                process::exit(1);
+            }
+        }
         
-        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 3);
-        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 3);
-        let image = get_image(&models[0], scale);
-
-        vbox.add(&image);
-        vbox.add(&hbox);
-        window.add(&vbox);
-
-        let button_accept = Button::new_with_label("Accept");
-    
-        button_accept.connect_clicked(clone!(@strong vbox, @weak models, @strong model_index => move |_| { 
-            let children : Vec<gtk::Widget> = vbox.get_children();
-            vbox.remove(&children[0]);
-            model_index = model_index + 1;
-            let image = get_image(&models[model_index], scale);
-            vbox.add(&image)
-        }));
-
-        let button_decline = Button::new_with_label("Decline");
-        button_decline.connect_clicked(|_| {
+        let chooser = Rc::new(Self {
+            app,
+            models,
+            model_index
         });
 
-        let button_quit = Button::new_with_label("Quit");
-        button_quit.connect_clicked(|_| {
-            return
+        chooser
+    }
+
+    pub fn run(&self, app: Rc<Self>) {
+        let app = app.clone();
+        let args: Vec<String> = env::args().collect();
+
+         // Find the stats on the models
+         let (w, h) = find_extents(&self.models);
+         let (mean, median, sd, min, max) = find_stats(&self.models);
+         let cutoff = median - ((2.0 * sd) as u32);
+ 
+         println!("Model sizes (min, max, mean, median, sd) : {}, {}, {}, {}, {}", 
+             min, max, mean, median, sd);
+         let mut scale = 3.0 / w;
+         if h > w { scale = 3.0 / h; }
+         println!("Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
+ 
+        self.app.connect_activate( move |gtkapp| {
+            let window = ApplicationWindow::new(gtkapp);
+            window.set_title("First GTK+ Program");
+            window.set_default_size(350, 350);
+            let vbox = gtk::Box::new(gtk::Orientation::Vertical, 3);
+            let ibox = gtk::Box::new(gtk::Orientation::Horizontal, 1);
+            let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+            let image = get_image(&(app.models[0]), scale);
+            ibox.add(&image);
+            vbox.add(&ibox);
+            vbox.add(&hbox);
+            window.add(&vbox);
+
+            // Now look at buttons
+            let button_accept = Button::new_with_label("Accept");
+            let ibox_arc = Arc::new(Mutex::new(ibox));
+            let ibox_accept = ibox_arc.clone();
+            let mut app_accept = app.clone();
+
+            let mut i : i32 = 0;
+            let button_click = || { i + 1 };
+
+            button_accept.connect_clicked( move |button| {
+                println!("Accepted {}", app_accept.model_index.get());
+                let ibox_ref = ibox_accept.lock().unwrap();
+                let children : Vec<gtk::Widget> = (*ibox_ref).get_children();
+                app_accept.model_index.set(app_accept.model_index.get() + 1);
+                let image = get_image(&(app_accept.models[app_accept.model_index.get()]), scale);
+                (*ibox_ref).remove(&children[0]);
+                (*ibox_ref).add(&image);
+                let window_ref = (*ibox_ref).get_parent().unwrap();
+                window_ref.show_all();
+            });
+
+            hbox.add(&button_accept);
+
+            let button_reject = Button::new_with_label("Reject");
+            let ibox_reject = ibox_arc.clone();
+            let mut app_reject = app.clone();
+
+            button_reject.connect_clicked( move |button| {
+                println!("Rejected {}", app_reject.model_index.get());
+                let ibox_ref = ibox_reject.lock().unwrap();
+                let children : Vec<gtk::Widget> = (*ibox_ref).get_children();
+                app_reject.model_index.set(app_reject.model_index.get() + 1);
+                let image = get_image(&(app_reject.models[app_reject.model_index.get()]), scale);
+                (*ibox_ref).remove(&children[0]);
+                (*ibox_ref).add(&image);
+                let window_ref = (*ibox_ref).get_parent().unwrap();
+                window_ref.show_all();
+            });
+
+            hbox.add(&button_reject);
+            window.show_all()
+
         });
 
-        hbox.add(&button_accept);
-        hbox.add(&button_decline);
-        hbox.add(&button_quit);
-
-        window.show_all();
-    });
-
-    application.run(&[]);
+        self.app.run(&[]);
+    }
 }
 
 fn main() {
-     let args: Vec<_> = env::args().collect();
+    let args: Vec<_> = env::args().collect();
+
+    let mut models : Vec<Vec<Point>> = vec!();
     
     if args.len() < 2 {
         println!("Usage: swiss parse <path to matlab file>"); 
         process::exit(1);
     }
 
-    match parse_matlab(&args[1]) {
-        Ok(models) => {
-            let (w, h) = find_extents(&models);
-            let (mean, median, sd, min, max) = find_stats(&models);
-            let cutoff = median - ((2.0 * sd) as u32);
-
-            println!("Model sizes (min, max, mean, median, sd) : {}, {}, {}, {}, {}", 
-                min, max, mean, median, sd);
-            let mut scale = 3.0 / w;
-            if h > w { scale = 3.0 / h; }
-            println!("Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
-            gtk_run(models, scale);
-        }, 
-        Err(e) => {
-            println!("Error parsing MATLAB File: {}", e);
-        }
-    }
-    
+    gtk::init().expect("Unable to start GTK3");
+    let app = Chooser::new(&args[1]);
+    app.run(app.clone());
 }
