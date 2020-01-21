@@ -30,6 +30,8 @@ use glib::clone;
 
 use std::env;
 use std::fmt;
+use std::fs::OpenOptions;
+use std::io::prelude::*;
 use rand::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::{cell::Cell, rc::Rc};
@@ -47,11 +49,13 @@ static WIDTH : u32 = 128;
 static HEIGHT : u32 = 128;
 static SHRINK : f32 = 0.95;
 
+// Our point structure for the final spots
 pub struct Point {
     x : f32,
     y : f32
 }
 
+// Holds our models and our GTK+ application
 pub struct Chooser {
     app: gtk::Application,
     models : Vec<Vec<Point>>,
@@ -159,6 +163,8 @@ fn scale_shift_model( model : &Vec<Point>, scale : f32 ) -> Vec<Point> {
     scaled
 }
 
+
+// Render out our image to a block of memory
 fn render (model : &Vec<Point>,  nthreads : u32, 
     sigma : f32, scale : f32) -> Bytes { 
     // Split into threads here I think
@@ -234,6 +240,7 @@ fn render (model : &Vec<Point>,  nthreads : u32,
     b
 }
 
+// Parse the not quite proper MATLAB / HDF5 file passed in from the command line
 fn parse_matlab(path : &String, models : &mut Vec<Vec<Point>>) -> Result<bool, hdf5::Error> {
     let mut file_option = 0;
 
@@ -396,12 +403,13 @@ fn parse_matlab(path : &String, models : &mut Vec<Vec<Point>>) -> Result<bool, h
         }, Err(e) => {
             println!("Error opening file: {} {}", path, e);
             return Err(e);
-        }
-           
+        }     
     }
     Ok(true)
 } 
 
+// Convert our model into a gtk::Image that we can present to
+// the screen.
 fn get_image(model : &Vec<Point>, scale : f32 ) -> gtk::Image {
     let first_image : Bytes = render(&model, 1, 1.25, scale);
 
@@ -418,6 +426,9 @@ fn get_image(model : &Vec<Point>, scale : f32 ) -> gtk::Image {
     image
 }
 
+
+// Our chooser struct/class implementation. Mostly just runs the GTK
+// and keeps a hold on our models.
 impl Chooser {
     pub fn new(path : &String) -> Rc<Self> {
         let app = Application::new(
@@ -485,10 +496,29 @@ impl Chooser {
 
             button_accept.connect_clicked( move |button| {
                 println!("Accepted {}", app_accept.model_index.get());
+
+                // Check we aren't overrunning
+                let mi = app_accept.model_index.get();
+                if mi >= app_accept.models.len() {
+                    println!("All models checked!");
+                    process::exit(1);
+                }
+
+                // Write out this index to a file saying it has been accepted
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open("accepted.txt")
+                    .unwrap();
+
+                if let Err(e) = writeln!(file, "{}", mi) {
+                    eprintln!("Couldn't write to acceptance file: {}", e);
+                }
+                    
                 let ibox_ref = ibox_accept.lock().unwrap();
                 let children : Vec<gtk::Widget> = (*ibox_ref).get_children();
-                app_accept.model_index.set(app_accept.model_index.get() + 1);
-                let image = get_image(&(app_accept.models[app_accept.model_index.get()]), scale);
+                app_accept.model_index.set(mi + 1);
+                let image = get_image(&(app_accept.models[mi + 1]), scale);
                 (*ibox_ref).remove(&children[0]);
                 (*ibox_ref).add(&image);
                 let window_ref = (*ibox_ref).get_parent().unwrap();
@@ -503,10 +533,18 @@ impl Chooser {
 
             button_reject.connect_clicked( move |button| {
                 println!("Rejected {}", app_reject.model_index.get());
+
+                // Check we aren't overrunning
+                let mi = app_reject.model_index.get();
+                if mi >= app_reject.models.len() {
+                    println!("All models checked!");
+                    process::exit(1);
+                }
+
                 let ibox_ref = ibox_reject.lock().unwrap();
                 let children : Vec<gtk::Widget> = (*ibox_ref).get_children();
-                app_reject.model_index.set(app_reject.model_index.get() + 1);
-                let image = get_image(&(app_reject.models[app_reject.model_index.get()]), scale);
+                app_reject.model_index.set(mi + 1);
+                let image = get_image(&(app_reject.models[mi + 1]), scale);
                 (*ibox_ref).remove(&children[0]);
                 (*ibox_ref).add(&image);
                 let window_ref = (*ibox_ref).get_parent().unwrap();
