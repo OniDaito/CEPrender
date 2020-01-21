@@ -167,8 +167,7 @@ def parse_matlab(filepath):
                                 #print("x, y", row[0], row[1])
                             print("New Model of size:", len(coords))
                             models.append(coords)
-                            if len(models) > 10:
-                                return models
+                          
 
     print("Number of models:", len(models))
     return models
@@ -179,6 +178,7 @@ if __name__ == "__main__" :
     args = parser.parse_args()
     assert(len(args.path) > 0)
     models = parse_matlab(args.path)
-    app = Application(models)
-    app.master.title('Swiss Choice')
-    app.mainloop()
+    print("Number of models:", len(models))
+    #app = Application(models)
+    #app.master.title('Swiss Choice')
+    #app.mainloop()
