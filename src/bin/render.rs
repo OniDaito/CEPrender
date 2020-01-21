@@ -19,9 +19,12 @@ extern crate ndarray;
 use std::env;
 use std::fmt;
 use rand::prelude::*;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use fitrs::{Fits, Hdu};
 use rand_distr::{Normal, Distribution};
 use std::process;
+use std::path::Path;
 use rand::distributions::Uniform;
 use scoped_threadpool::Pool;
 use std::sync::mpsc::channel;
@@ -94,12 +97,16 @@ fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
 }
 
 // Filter models, by cutoff size thus far
-fn filter_models(models : &mut Vec<Vec<Point>>, cutoff: u32 )  {
+fn filter_models(models : &mut Vec<Vec<Point>>, cutoff: u32, accepted : Vec<usize>) {
     let mut idx = 0;
     while idx < models.len() {
-        if models[idx].len() < cutoff as usize {
-            models.remove(idx);
+        let mut remove : bool = false;
+        if accepted.len() > 0 {
+            if !accepted.contains(&idx) { remove = true; }
         }
+
+        if models[idx].len() < cutoff as usize { remove = true; }
+        if remove { models.remove(idx);}
         idx = idx + 1;
     }
 }
@@ -373,10 +380,8 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
                                                             x : xpos[i],
                                                             y : ypos[i]
                                                         };
-                                                    
                                                         model.push(p);
                                                     }
-
                                                     models.push(model);   
                                                 }
                                                 //println!("{:?}", final_data.shape());
@@ -448,7 +453,6 @@ fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
                     }
                 }
             }
-
         }, Err(e) => {
             println!("Error opening file: {} {}", path, e);
             return Err(e);
@@ -462,20 +466,35 @@ fn main() {
      let args: Vec<_> = env::args().collect();
     
     if args.len() < 6 {
-        println!("Usage: swiss parse <path to matlab file> <path to output> <threads> <sigma> <pertubations>"); 
+        println!("Usage: swiss parse <path to matlab file> <path to output> <threads> <sigma> <pertubations> <accepted - OPTIONAL>"); 
         process::exit(1);
     }
     
     let nthreads = args[3].parse::<u32>().unwrap();
     let npertubations = args[5].parse::<u32>().unwrap();
     let sigma = args[4].parse::<f32>().unwrap();
+    let mut accepted : Vec<usize> = vec!();
+
+    if args.len() == 7 {
+        let accepted_file = Path::new(&args[6]);
+        match File::open(&accepted_file) {
+            Err(why) => { panic!("couldn't open {}: {}", &accepted_file.display(), why); },
+            Ok(file) => {
+                for line in BufReader::new(file).lines() {
+                    let sc = line.unwrap();
+                    let ti = sc.parse::<usize>().unwrap();
+                    accepted.push(ti);
+                }
+            }
+        }
+    }
 
     match parse_matlab(&args[1]) {
         Ok(mut models) => {
             let (w, h) = find_extents(&models);
             let (mean, median, sd, min, max) = find_stats(&models);
             let cutoff = median - ((2.0 * sd) as u32);
-            filter_models(&mut models, cutoff);
+            filter_models(&mut models, cutoff, accepted);
             println!("Model sizes (min, max, mean, median, sd) : {}, {}, {}, {}, {}", 
                 min, max, mean, median, sd);
             let mut scale = 3.0 / w;
