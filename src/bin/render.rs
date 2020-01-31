@@ -64,6 +64,7 @@ static WIDTH : u32 = 128;
 static HEIGHT : u32 = 128;
 static SHRINK : f32 = 0.95;
 
+#[derive(Copy, Clone)]
 pub struct Point {
     x : f32,
     y : f32
@@ -97,8 +98,9 @@ fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
 }
 
 // Filter models, by cutoff size thus far
-fn filter_models(models : &mut Vec<Vec<Point>>, cutoff: u32, accepted : Vec<usize>) {
+fn filter_models(models : & Vec<Vec<Point>>, cutoff: u32, accepted : Vec<usize>) -> Vec<Vec<Point>> {
     let mut idx = 0;
+    let mut accepted_models : Vec<Vec<Point>> = vec!();
     while idx < models.len() {
         let mut remove : bool = false;
         if accepted.len() > 0 {
@@ -106,9 +108,13 @@ fn filter_models(models : &mut Vec<Vec<Point>>, cutoff: u32, accepted : Vec<usiz
         }
 
         if models[idx].len() < cutoff as usize { remove = true; }
-        if remove { models.remove(idx);}
+        if !remove {
+            let cc = models[idx].clone(); 
+            accepted_models.push(cc);
+        }
         idx = idx + 1;
     }
+    accepted_models
 }
 
 // Get some stats on the models, starting with the mean and
@@ -494,13 +500,13 @@ fn main() {
             let (w, h) = find_extents(&models);
             let (mean, median, sd, min, max) = find_stats(&models);
             let cutoff = median - ((2.0 * sd) as u32);
-            filter_models(&mut models, cutoff, accepted);
+            let accepted_models = filter_models(&models, cutoff, accepted);
             println!("Model sizes (min, max, mean, median, sd) : {}, {}, {}, {}, {}", 
                 min, max, mean, median, sd);
             let mut scale = 3.0 / w;
             if h > w { scale = 3.0 / h; }
             println!("Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
-            render(&models, &args[2], nthreads, npertubations, sigma, scale);
+            render(&accepted_models, &args[2], nthreads, npertubations, sigma, scale);
         }, 
         Err(e) => {
             println!("Error parsing MATLAB File: {}", e);
