@@ -505,7 +505,8 @@ fn main() {
                 min, max, mean, median, sd);
             let mut scale = 3.0 / w;
             if h > w { scale = 3.0 / h; }
-            println!("Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
+            println!("Max Width / Height: {}, {}", w, h);
+            println!("Scale / Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
             render(&accepted_models, &args[2], nthreads, npertubations, sigma, scale);
         }, 
         Err(e) => {
