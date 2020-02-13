@@ -219,7 +219,7 @@ pub fn drop_points(img : &Vec<Point>, max_points : usize) -> Vec<Point> {
 
     for i in 0..max_points {
         let mut ridx = rng.gen_range(0, img.len()-1);
-        while !choices.contains(&ridx) {
+        while choices.contains(&ridx) {
             ridx = rng.gen_range(0, img.len()-1);
         }
 
