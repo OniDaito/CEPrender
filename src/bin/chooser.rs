@@ -566,7 +566,7 @@ fn main() {
     let mut models : Vec<Vec<Point>> = vec!();
     
     if args.len() < 2 {
-        println!("Usage: swiss parse <path to matlab file>"); 
+        println!("Usage: chooser <path to matlab file>"); 
         process::exit(1);
     }
 

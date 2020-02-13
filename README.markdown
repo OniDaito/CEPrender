@@ -21,3 +21,10 @@ If you have rust installed, enter the swiss_parse directory and type
 I think it's a good idea to make sure your rust compilier is up-to-date. I've fallen afoul of this a few times
 
     rustup upgrade
+
+## Running
+
+There are two programs: render and chooser. Render creates all the images and chooser lets you browse the images to select these that you want to use.
+
+    cargo run --bin render --release <path to matlab file> <path to output> <threads> <sigma> <pertubations> <accepted - OPTIONAL>
+    cargo run --bin chooser --release <path to matlab file>

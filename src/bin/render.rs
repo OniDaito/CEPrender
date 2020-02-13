@@ -472,7 +472,7 @@ fn main() {
      let args: Vec<_> = env::args().collect();
     
     if args.len() < 6 {
-        println!("Usage: swiss parse <path to matlab file> <path to output> <threads> <sigma> <pertubations> <accepted - OPTIONAL>"); 
+        println!("Usage: render <path to matlab file> <path to output> <threads> <sigma> <pertubations> <accepted - OPTIONAL>"); 
         process::exit(1);
     }
     
@@ -501,6 +501,10 @@ fn main() {
             let (mean, median, sd, min, max) = find_stats(&models);
             let cutoff = median - ((2.0 * sd) as u32);
             let accepted_models = filter_models(&models, cutoff, accepted);
+            // Find extents a second time
+            let (w, h) = find_extents(&models);
+            let (mean, median, sd, min, max) = find_stats(&models);
+            let cutoff = median - ((2.0 * sd) as u32);
             println!("Model sizes (min, max, mean, median, sd) : {}, {}, {}, {}, {}", 
                 min, max, mean, median, sd);
             let mut scale = 3.0 / w;
