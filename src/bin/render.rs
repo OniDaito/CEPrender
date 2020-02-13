@@ -26,6 +26,7 @@ use rand_distr::{Normal, Distribution};
 use std::process;
 use std::path::Path;
 use rand::distributions::Uniform;
+use rand::Rng;
 use scoped_threadpool::Pool;
 use std::sync::mpsc::channel;
 use pbr::ProgressBar;
@@ -211,9 +212,26 @@ pub fn save_fits(img : &Vec<Vec<f32>>, filename : &String) {
     Fits::create(filename, primary_hdu).expect("Failed to create");  
 }
 
+pub fn drop_points(img : &Vec<Point>, max_points : usize) -> Vec<Point> {
+    let mut fmodel : Vec<Point> = vec!();
+    let mut rng = rand::thread_rng();
+    let mut choices : Vec<usize> = vec!(); 
+
+    for i in 0..max_points {
+        let mut ridx = rng.gen_range(0, img.len()-1);
+        while !choices.contains(&ridx) {
+            ridx = rng.gen_range(0, img.len()-1);
+        }
+
+        choices.push(ridx);
+        fmodel.push(img[ridx])
+    }
+
+    fmodel
+}
 
 fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32, 
-    pertubations : u32, sigma : f32, scale : f32) {
+    pertubations : u32, sigma : f32, scale : f32, max_points : usize) {
     // Split into threads here I think
     let pi = std::f32::consts::PI;
     let (tx, rx) = channel();
@@ -239,8 +257,13 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
                 let side = Uniform::new(-pi, pi);
 
                 for _i in 0..cslice.len() {
-                    let scaled = scale_shift_model(&cslice[_i], scale);
-                
+                    // Slightly inefficient if we are dropping points
+                    let mut scaled = scale_shift_model(&cslice[_i], scale);
+                    if max_points != 0 {
+                        let fslice = drop_points(&cslice[_i], max_points);
+                        scaled = scale_shift_model(&fslice, scale);
+                    }
+                    
                     for _j in 0..pertubations {
                         let mut timg : Vec<Vec<f32>> = vec![];
 
@@ -472,7 +495,8 @@ fn main() {
      let args: Vec<_> = env::args().collect();
     
     if args.len() < 6 {
-        println!("Usage: render <path to matlab file> <path to output> <threads> <sigma> <pertubations> <accepted - OPTIONAL>"); 
+        println!("Usage: render <path to matlab file> <path to output> <threads>
+            <sigma> <pertubations> <accepted - OPTIONAL> <points limit - OPTIONAL>"); 
         process::exit(1);
     }
     
@@ -480,8 +504,9 @@ fn main() {
     let npertubations = args[5].parse::<u32>().unwrap();
     let sigma = args[4].parse::<f32>().unwrap();
     let mut accepted : Vec<usize> = vec!();
+    let mut max_points : usize = 0;
 
-    if args.len() == 7 {
+    if args.len() >= 7 {
         let accepted_file = Path::new(&args[6]);
         match File::open(&accepted_file) {
             Err(why) => { panic!("couldn't open {}: {}", &accepted_file.display(), why); },
@@ -493,6 +518,10 @@ fn main() {
                 }
             }
         }
+    }
+
+    if args.len() == 8 {
+        max_points = args[7].parse::<usize>().unwrap();
     }
 
     match parse_matlab(&args[1]) {
@@ -511,7 +540,7 @@ fn main() {
             if h > w { scale = 3.0 / h; }
             println!("Max Width / Height: {}, {}", w, h);
             println!("Scale / Scalar: {}, {}", scale, scale * (WIDTH as f32) * SHRINK); 
-            render(&accepted_models, &args[2], nthreads, npertubations, sigma, scale);
+            render(&accepted_models, &args[2], nthreads, npertubations, sigma, scale, max_points);
         }, 
         Err(e) => {
             println!("Error parsing MATLAB File: {}", e);
