@@ -1,10 +1,8 @@
-/// A small program that parses Christian's 
-/// MATLAB data files that he sent us. Based
-/// on the python version I wrote but it's 
-/// much faster!
+/// A small program that reads a MATLAB file containing the CEP152
+/// data and renders a set of files for our neural network.
 ///
 /// Author: Benjamin Blundell
-/// Email: me@benjamin.computer
+/// Email: k1803390@kcl.ac.uk
 
 extern crate rand;
 extern crate image;
@@ -32,35 +30,6 @@ use std::sync::mpsc::channel;
 use pbr::ProgressBar;
 use ndarray::{Slice, SliceInfo, s, Array1};
 
-
-// This represents a row in the matlab file
-// 0 and 1 are x and y but I can't remember what the others
-// are so we just use placeholders for now.
-// DITCHED for now as it won't convert for some reason.
-/*#[derive(hdf5::H5Type, Clone, PartialEq, Debug)]
-#[repr(C)]
-pub struct SwissRow {
-    x : f32,
-    y : f32,
-    a : i32,
-    b : f32,
-    c : f32,
-    d : f32,
-    e : f32,
-    f : f32,
-    g : f32,
-    h : f32,
-    i : i32,
-    j : i32,
-    k : i32
-}
-
-impl fmt::Display for SwissRow {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({}, {})", self.x, self.y)
-    }
-}*/
-
 static WIDTH : u32 = 128;
 static HEIGHT : u32 = 128;
 static SHRINK : f32 = 0.95;
@@ -71,8 +40,15 @@ pub struct Point {
     y : f32
 }
 
-// go through all the models and find the extents. This gives
-// us a global scale, we can use in the rendering.
+/// Returns two f32 numbers - the extents in X and Y.
+/// Go through all the models and find the extents. This gives
+/// us a global scale, we can use in the rendering.
+/// 
+/// # Arguments
+/// 
+/// * `models` - A Vector of Vectors of Point
+/// 
+
 fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
     let mut w : f32 = 0.0;
     let mut h : f32  = 0.0;
@@ -98,7 +74,15 @@ fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
     (w, h)
 }
 
-// Filter models, by cutoff size thus far
+/// Returns a Vector of Vectors of Points
+/// Filter models, by cutoff size thus far
+/// 
+/// # Arguments
+/// 
+/// * `models` - A Vec of Vectors of Point
+/// * `cutoff` - a u32 representing  the cutoff number of points
+/// * `accepted` - a Vec of usize representing the indices of the models we have accepted.
+///
 fn filter_models(models : & Vec<Vec<Point>>, cutoff: u32, accepted : Vec<usize>) -> Vec<Vec<Point>> {
     let mut idx = 0;
     let mut accepted_models : Vec<Vec<Point>> = vec!();
@@ -118,9 +102,14 @@ fn filter_models(models : & Vec<Vec<Point>>, cutoff: u32, accepted : Vec<usize>)
     accepted_models
 }
 
-// Get some stats on the models, starting with the mean and
-// median number of points
-
+/// Returns statistics on the model as a tuple: mean, median, stddev, min and max
+/// Get some stats on the models, starting with the mean and
+/// median number of points
+/// 
+/// # Arguments
+/// 
+/// * `models` - A Vec of Vectors of Point
+///
 fn find_stats ( models : &Vec<Vec<Point>> ) -> (f32, u32, f32, u32, u32) {
     let mut mean : f32 = 0.0;
     let mut median : u32 = 0;
@@ -154,12 +143,18 @@ fn find_stats ( models : &Vec<Vec<Point>> ) -> (f32, u32, f32, u32, u32) {
     (mean, median, sd, min, max)
 }
 
-
-// Scale and move all the points so they are in WIDTH, HEIGHT
-// and the Centre of mass moves to the origin.
-// We pass in the global scale as we don't want to scale per image.
-// We are moving the centre of mass to the centre of the image though
-// so we have to put in translation to our final model
+/// Returns a Vec of Point - the model
+/// Scale and move all the points so they are in WIDTH, HEIGHT
+/// and the Centre of mass moves to the origin.
+/// We pass in the global scale as we don't want to scale per image.
+/// We are moving the centre of mass to the centre of the image though
+/// so we have to put in translation to our final model
+/// 
+/// # Arguments
+/// 
+/// * `models` - A Vec of Vectors of Point
+/// * `scale` - An f32 representing the scale for the points
+///
 fn scale_shift_model( model : &Vec<Point>, scale : f32 ) -> Vec<Point> {
     let mut scaled : Vec<Point> = vec![];
     let mut minx : f32 = 1e10;
@@ -190,6 +185,13 @@ fn scale_shift_model( model : &Vec<Point>, scale : f32 ) -> Vec<Point> {
     scaled
 }
 
+/// Returns None
+/// Save a fits image
+/// # Arguments
+/// 
+/// * `img` - A Vec of Vectors of f32 - the pixels
+/// * `filename` - A String - the filename to save
+///
 pub fn save_fits(img : &Vec<Vec<f32>>, filename : &String) {
     let mut data : Vec<f32> = (0..HEIGHT)
         .map(|i| (0..WIDTH).map(
@@ -212,6 +214,13 @@ pub fn save_fits(img : &Vec<Vec<f32>>, filename : &String) {
     Fits::create(filename, primary_hdu).expect("Failed to create");  
 }
 
+/// Returns a Vec of Point - a model
+/// Drop points so we are equal to or under a max.
+/// # Arguments
+/// 
+/// * `img` - A Vec of Vectors of Point - a model
+/// * `max_points` - A usize representing the maximum number of points
+///
 pub fn drop_points(img : &Vec<Point>, max_points : usize) -> Vec<Point> {
     let mut fmodel : Vec<Point> = vec!();
     let mut rng = rand::thread_rng();
@@ -230,6 +239,18 @@ pub fn drop_points(img : &Vec<Point>, max_points : usize) -> Vec<Point> {
     fmodel
 }
 
+/// Returns a Vec of Point - a model
+/// Drop points so we are equal to or under a max.
+/// # Arguments
+/// 
+/// * `models` - A Vec of Vectors of Point - a model
+/// * `out_path` - A String representing the path to render to
+/// * `nthreads` - A u32 - the number of threads to spin up
+/// * `pertubations` - A u32 - how many angles to use in the spin
+/// * `sigma` - An f32 - what sigma value to use
+/// * `scale` - An f32 - what scale to use
+/// * `max_points` - A usize - maximum number of points to 
+///
 fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32, 
     pertubations : u32, sigma : f32, scale : f32, max_points : usize) {
     // Split into threads here I think
@@ -322,6 +343,12 @@ fn render (models : &Vec<Vec<Point>>, out_path : &String,  nthreads : u32,
     });
 }
 
+/// Returns a Result of Vec of Vec of Point.
+/// Parse the HDF5 (or MATLAB) file.
+/// # Arguments
+/// 
+/// * `path` - A String - the path to the HDF5 / mat file.
+///
 fn parse_matlab(path : &String) -> Result<Vec<Vec<Point>>, hdf5::Error> {
     let mut models : Vec<Vec<Point>>  = vec!();
     let mut file_option = 0;

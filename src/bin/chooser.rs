@@ -1,13 +1,14 @@
-/// A small program that parses Christian's 
-/// MATLAB data files that he sent us. It 
-/// renderers and then asks us to choose if
-/// we want to keep it.
+/// A small program that parses a particular 
+/// MATLAB data file containing CEP153 data. It 
+/// renderers and then asks us to choose if we
+/// want to keep it.
 ///
 /// Using a little gtk-rs
 /// https://gtk-rs.org/docs-src/tutorial/
 ///
 /// Author: Benjamin Blundell
-/// Email: me@benjamin.computer
+/// Email: k1803390@kcl.ac.uk
+/// 
 
 extern crate rand;
 extern crate image;
@@ -49,22 +50,29 @@ static WIDTH : u32 = 128;
 static HEIGHT : u32 = 128;
 static SHRINK : f32 = 0.95;
 
-// Our point structure for the final spots
+/// Our point structure for the final spots
 pub struct Point {
     x : f32,
     y : f32
 }
 
-// Holds our models and our GTK+ application
+/// Holds our models and our GTK+ application
 pub struct Chooser {
     app: gtk::Application,
     models : Vec<Vec<Point>>,
     model_index : Cell<usize> // use this so we can mutate it later
 }
 
-
-// go through all the models and find the extents. This gives
-// us a global scale, we can use in the rendering.
+/// Return the extents of the image
+/// Go through all the models and find the extents. This gives
+/// us a global scale, we can use in the rendering.
+///
+/// # Arguments
+///
+/// * `models` - A Vec of Vec of Point - the models
+///
+/// # Examples
+///
 fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
     let mut w : f32 = 0.0;
     let mut h : f32  = 0.0;
@@ -90,10 +98,14 @@ fn find_extents ( models : &Vec<Vec<Point>> ) -> (f32, f32) {
     (w, h)
 }
 
-
-// Get some stats on the models, starting with the mean and
-// median number of points
-
+/// Returns statistics on the model as a tuple: mean, median, stddev, min and max
+/// Get some stats on the models, starting with the mean and
+/// median number of points
+/// 
+/// # Arguments
+/// 
+/// * `models` - A Vec of Vectors of Point
+///
 fn find_stats ( models : &Vec<Vec<Point>> ) -> (f32, u32, f32, u32, u32) {
     let mut mean : f32 = 0.0;
     let mut median : u32 = 0;
@@ -128,11 +140,18 @@ fn find_stats ( models : &Vec<Vec<Point>> ) -> (f32, u32, f32, u32, u32) {
 }
 
 
-// Scale and move all the points so they are in WIDTH, HEIGHT
-// and the Centre of mass moves to the origin.
-// We pass in the global scale as we don't want to scale per image.
-// We are moving the centre of mass to the centre of the image though
-// so we have to put in translation to our final model
+/// Returns a Vec of Point - the model
+/// Scale and move all the points so they are in WIDTH, HEIGHT
+/// and the Centre of mass moves to the origin.
+/// We pass in the global scale as we don't want to scale per image.
+/// We are moving the centre of mass to the centre of the image though
+/// so we have to put in translation to our final model
+/// 
+/// # Arguments
+/// 
+/// * `models` - A Vec of Vectors of Point
+/// * `scale` - An f32 representing the scale for the points
+///
 fn scale_shift_model( model : &Vec<Point>, scale : f32 ) -> Vec<Point> {
     let mut scaled : Vec<Point> = vec![];
     let mut minx : f32 = 1e10;
@@ -163,8 +182,15 @@ fn scale_shift_model( model : &Vec<Point>, scale : f32 ) -> Vec<Point> {
     scaled
 }
 
-
-// Render out our image to a block of memory
+/// Returns a Vec of Point - a model
+/// Drop points so we are equal to or under a max.
+/// # Arguments
+/// 
+/// * `models` - A Vec of Vectors of Point - a model
+/// * `nthreads` - A u32 - the number of threads to spin up
+/// * `sigma` - An f32 - what sigma value to use
+/// * `scale` - An f32 - what scale to use
+///
 fn render (model : &Vec<Point>,  nthreads : u32, 
     sigma : f32, scale : f32) -> Bytes { 
     // Split into threads here I think
@@ -240,7 +266,13 @@ fn render (model : &Vec<Point>,  nthreads : u32,
     b
 }
 
-// Parse the not quite proper MATLAB / HDF5 file passed in from the command line
+/// Returns a Result of bool and hdf5::Error
+/// Parse the HDF5 (or MATLAB) file.
+/// # Arguments
+/// 
+/// * `path` - A String - the path to the HDF5 / mat file
+/// * `models` - A reference to Vec of Vec of Point - the models to be
+///
 fn parse_matlab(path : &String, models : &mut Vec<Vec<Point>>) -> Result<bool, hdf5::Error> {
     let mut file_option = 0;
 
@@ -406,10 +438,16 @@ fn parse_matlab(path : &String, models : &mut Vec<Vec<Point>>) -> Result<bool, h
         }     
     }
     Ok(true)
-} 
+}
 
-// Convert our model into a gtk::Image that we can present to
-// the screen.
+/// Returns a gtk::Image for presentation to the screen
+/// Convert our model into a gtk::Image that we can present to
+/// the screen.
+/// # Arguments
+/// 
+/// * `path` - A String - the path to the HDF5 / mat file
+/// * `models` - A reference to Vec of Vec of Point - the models to be
+///
 fn get_image(model : &Vec<Point>, scale : f32 ) -> gtk::Image {
     let first_image : Bytes = render(&model, 1, 1.25, scale);
 
@@ -427,9 +465,18 @@ fn get_image(model : &Vec<Point>, scale : f32 ) -> gtk::Image {
 }
 
 
-// Our chooser struct/class implementation. Mostly just runs the GTK
-// and keeps a hold on our models.
+
+/// Returns a Chooser - our GTK based application to choose our images
+/// Our chooser struct/class implementation. Mostly just runs the GTK
+/// and keeps a hold on our models.
+/// # Arguments
+/// 
+/// * `path` - A String - the path to the HDF5 / mat file
+/// * `models` - A reference to Vec of Vec of Point - the models to be
+///
+
 impl Chooser {
+    /// Creates a window looking at a particular path
     pub fn new(path : &String) -> Rc<Self> {
         let app = Application::new(
             Some("com.github.gtk-rs.examples.basic"),
@@ -457,6 +504,7 @@ impl Chooser {
         chooser
     }
 
+    /// The main run function.
     pub fn run(&self, app: Rc<Self>) {
         let app = app.clone();
         let args: Vec<String> = env::args().collect();
